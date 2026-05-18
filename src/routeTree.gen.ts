@@ -9,8 +9,32 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VendedoresRouteImport } from './routes/vendedores'
+import { Route as RelatoriosRouteImport } from './routes/relatorios'
+import { Route as PdvRouteImport } from './routes/pdv'
+import { Route as EstoqueRouteImport } from './routes/estoque'
 import { Route as IndexRouteImport } from './routes/index'
 
+const VendedoresRoute = VendedoresRouteImport.update({
+  id: '/vendedores',
+  path: '/vendedores',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RelatoriosRoute = RelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PdvRoute = PdvRouteImport.update({
+  id: '/pdv',
+  path: '/pdv',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EstoqueRoute = EstoqueRouteImport.update({
+  id: '/estoque',
+  path: '/estoque',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +43,72 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/estoque': typeof EstoqueRoute
+  '/pdv': typeof PdvRoute
+  '/relatorios': typeof RelatoriosRoute
+  '/vendedores': typeof VendedoresRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/estoque': typeof EstoqueRoute
+  '/pdv': typeof PdvRoute
+  '/relatorios': typeof RelatoriosRoute
+  '/vendedores': typeof VendedoresRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/estoque': typeof EstoqueRoute
+  '/pdv': typeof PdvRoute
+  '/relatorios': typeof RelatoriosRoute
+  '/vendedores': typeof VendedoresRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores'
+  id: '__root__' | '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EstoqueRoute: typeof EstoqueRoute
+  PdvRoute: typeof PdvRoute
+  RelatoriosRoute: typeof RelatoriosRoute
+  VendedoresRoute: typeof VendedoresRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/vendedores': {
+      id: '/vendedores'
+      path: '/vendedores'
+      fullPath: '/vendedores'
+      preLoaderRoute: typeof VendedoresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/relatorios': {
+      id: '/relatorios'
+      path: '/relatorios'
+      fullPath: '/relatorios'
+      preLoaderRoute: typeof RelatoriosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pdv': {
+      id: '/pdv'
+      path: '/pdv'
+      fullPath: '/pdv'
+      preLoaderRoute: typeof PdvRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/estoque': {
+      id: '/estoque'
+      path: '/estoque'
+      fullPath: '/estoque'
+      preLoaderRoute: typeof EstoqueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,6 +121,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EstoqueRoute: EstoqueRoute,
+  PdvRoute: PdvRoute,
+  RelatoriosRoute: RelatoriosRoute,
+  VendedoresRoute: VendedoresRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
