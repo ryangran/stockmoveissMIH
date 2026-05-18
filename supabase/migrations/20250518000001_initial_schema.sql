@@ -1,9 +1,5 @@
--- ============================================================
--- StockMóveis — Schema Supabase
--- Execute no SQL Editor do seu projeto Supabase
--- ============================================================
+-- StockMóveis — Migration inicial
 
--- Usuários (admin + vendedores)
 CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username      TEXT UNIQUE NOT NULL,
@@ -17,7 +13,6 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Produtos
 CREATE TABLE IF NOT EXISTS products (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name         TEXT NOT NULL,
@@ -33,7 +28,6 @@ CREATE TABLE IF NOT EXISTS products (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Vendas
 CREATE TABLE IF NOT EXISTS sales (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   seller_id      UUID NOT NULL,
@@ -45,7 +39,6 @@ CREATE TABLE IF NOT EXISTS sales (
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Itens da venda
 CREATE TABLE IF NOT EXISTS sale_items (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sale_id      UUID NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
@@ -57,7 +50,6 @@ CREATE TABLE IF NOT EXISTS sale_items (
   subtotal     NUMERIC(10,2) NOT NULL
 );
 
--- Movimentações de estoque
 CREATE TABLE IF NOT EXISTS stock_movements (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id   UUID NOT NULL,
@@ -68,14 +60,12 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Desabilitar RLS (sistema interno, sem autenticação Supabase)
 ALTER TABLE users            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE products         DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sales            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_items       DISABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_movements  DISABLE ROW LEVEL SECURITY;
 
--- Permissões para a chave anon acessar as tabelas
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON TABLE users            TO anon, authenticated;
 GRANT ALL ON TABLE products         TO anon, authenticated;
@@ -83,8 +73,6 @@ GRANT ALL ON TABLE sales            TO anon, authenticated;
 GRANT ALL ON TABLE sale_items       TO anon, authenticated;
 GRANT ALL ON TABLE stock_movements  TO anon, authenticated;
 
--- Usuário admin inicial
--- Senha: admin  →  SHA-256 = 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
 INSERT INTO users (username, password_hash, name, role, allowed_tabs)
 VALUES (
   'admin',
