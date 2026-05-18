@@ -9,7 +9,6 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { Toaster } from "sonner";
-import { initSampleData } from "../lib/store";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -266,11 +265,6 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
-  // Seed sample data once on app load
-  if (typeof window !== "undefined") {
-    initSampleData();
-  }
 
   return (
     <QueryClientProvider client={queryClient}>

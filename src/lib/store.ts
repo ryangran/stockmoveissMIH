@@ -1,11 +1,10 @@
 import type { Product, Sale, Seller, StockMovement, PaymentMethod } from './types'
 
 const KEYS = {
-  products: 'smv_products_v1',
-  sales: 'smv_sales_v1',
-  sellers: 'smv_sellers_v1',
-  movements: 'smv_movements_v1',
-  initialized: 'smv_initialized_v1',
+  products: 'smv_products_v2',
+  sales: 'smv_sales_v2',
+  sellers: 'smv_sellers_v2',
+  movements: 'smv_movements_v2',
 }
 
 function genId(): string {
@@ -130,84 +129,6 @@ export function addStockEntry(productId: string, quantity: number, reason: strin
   if (!product) return
   updateProduct(productId, { quantity: product.quantity + quantity })
   addMovement({ productId, productName: product.name, type: 'in', quantity, reason })
-}
-
-// ── Seed ──────────────────────────────────────────────────────────────────────
-
-function generateSampleSales(products: Product[], sellers: Seller[]): Sale[] {
-  const paymentMethods: PaymentMethod[] = ['cash', 'pix', 'debit', 'credit', 'financing']
-  const sales: Sale[] = []
-
-  for (let daysAgo = 30; daysAgo >= 0; daysAgo--) {
-    const numSales = Math.floor(Math.random() * 5) + 1
-    for (let j = 0; j < numSales; j++) {
-      const seller = sellers[Math.floor(Math.random() * sellers.length)]
-      const numItems = Math.floor(Math.random() * 2) + 1
-      const items = Array.from({ length: numItems }, () => {
-        const product = products[Math.floor(Math.random() * products.length)]
-        const qty = Math.floor(Math.random() * 2) + 1
-        return {
-          productId: product.id,
-          productName: product.name,
-          sku: product.sku,
-          quantity: qty,
-          unitPrice: product.price,
-          subtotal: product.price * qty,
-        }
-      })
-      const subtotal = items.reduce((s, i) => s + i.subtotal, 0)
-      const discount = Math.random() > 0.75 ? Math.round(subtotal * 0.05 * 100) / 100 : 0
-      const date = new Date()
-      date.setDate(date.getDate() - daysAgo)
-      date.setHours(9 + Math.floor(Math.random() * 9), Math.floor(Math.random() * 60))
-      sales.push({
-        id: genId(),
-        items,
-        sellerId: seller.id,
-        sellerName: seller.name,
-        paymentMethod: paymentMethods[Math.floor(Math.random() * paymentMethods.length)],
-        subtotal,
-        discount,
-        total: subtotal - discount,
-        createdAt: date.toISOString(),
-      })
-    }
-  }
-  return sales
-}
-
-export function initSampleData(): void {
-  if (localStorage.getItem(KEYS.initialized)) return
-
-  const products: Product[] = [
-    { id: genId(), name: 'Sofá Retrátil 3 Lugares', category: 'Sofás', sku: 'SOF-001', price: 2890, cost: 1800, quantity: 5, minQuantity: 2, color: 'Cinza', model: 'Oslo' },
-    { id: genId(), name: 'Sofá Canto 5 Lugares', category: 'Sofás', sku: 'SOF-002', price: 4200, cost: 2600, quantity: 2, minQuantity: 1, color: 'Bege', model: 'Corner Luxe' },
-    { id: genId(), name: 'Mesa de Jantar 6 Cadeiras', category: 'Mesas', sku: 'MES-001', price: 3200, cost: 1950, quantity: 3, minQuantity: 1, color: 'Imbuia', model: 'Classic' },
-    { id: genId(), name: 'Mesa de Jantar 4 Cadeiras', category: 'Mesas', sku: 'MES-002', price: 2100, cost: 1280, quantity: 4, minQuantity: 2, color: 'Branco', model: 'Minimal' },
-    { id: genId(), name: 'Guarda-Roupa 6 Portas', category: 'Dormitório', sku: 'GRO-001', price: 2100, cost: 1300, quantity: 7, minQuantity: 2, color: 'Branco', model: 'Premium' },
-    { id: genId(), name: 'Cama Box Casal Queen', category: 'Dormitório', sku: 'CAM-001', price: 1890, cost: 1100, quantity: 4, minQuantity: 2, model: 'Ortopédico Plus' },
-    { id: genId(), name: 'Rack para TV 60"', category: 'Sala', sku: 'RAC-001', price: 890, cost: 520, quantity: 1, minQuantity: 2, color: 'Preto', model: 'Slim' },
-    { id: genId(), name: 'Poltrona Decorativa', category: 'Sofás', sku: 'POL-001', price: 1290, cost: 780, quantity: 2, minQuantity: 1, color: 'Verde', model: 'Luxe' },
-    { id: genId(), name: 'Estante Modular 5 Nichos', category: 'Sala', sku: 'EST-001', price: 760, cost: 450, quantity: 0, minQuantity: 2, color: 'Branco' },
-    { id: genId(), name: 'Mesa de Centro Oval', category: 'Sala', sku: 'MEC-001', price: 680, cost: 380, quantity: 6, minQuantity: 2, color: 'Nogal' },
-    { id: genId(), name: 'Criado-Mudo com Gaveta', category: 'Dormitório', sku: 'CRI-001', price: 320, cost: 185, quantity: 8, minQuantity: 3 },
-    { id: genId(), name: 'Penteadeira com Espelho', category: 'Dormitório', sku: 'PEN-001', price: 1150, cost: 680, quantity: 1, minQuantity: 2, color: 'Branco' },
-  ]
-
-  const sellers: Seller[] = [
-    { id: genId(), name: 'Carlos Mendonça', phone: '(11) 99876-5432', email: 'carlos@loja.com', active: true },
-    { id: genId(), name: 'Ana Beatriz Lima', phone: '(11) 99765-4321', email: 'ana@loja.com', active: true },
-    { id: genId(), name: 'Roberto Figueira', phone: '(11) 99654-3210', email: 'roberto@loja.com', active: true },
-    { id: genId(), name: 'Juliana Costa', phone: '(11) 99543-2109', email: 'juliana@loja.com', active: true },
-  ]
-
-  const sales = generateSampleSales(products, sellers)
-
-  saveProducts(products)
-  saveSellers(sellers)
-  saveSales(sales)
-  write(KEYS.movements, [])
-  localStorage.setItem(KEYS.initialized, '1')
 }
 
 // ── Analytics helpers ─────────────────────────────────────────────────────────
