@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
-import { Plus, Search, Edit2, Trash2, ArrowDown, Package, AlertTriangle, DollarSign, X, Check } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, ArrowDown, Package, AlertTriangle, DollarSign, X, Check, CheckSquare, Square, MinusSquare } from "lucide-react";
 import { getProducts, addProduct, updateProduct, deleteProduct, addStockEntry } from "../lib/store";
 import type { Product } from "../lib/types";
 
@@ -27,6 +27,7 @@ function Estoque() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
   const [stockModal, setStockModal] = useState<{ product: Product; qty: string; reason: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const reload = () => setProducts(getProducts());
 
@@ -90,9 +91,45 @@ function Estoque() {
   function handleDelete(id: string) {
     if (confirm("Excluir este produto?")) {
       deleteProduct(id);
+      setSelected((prev) => { const s = new Set(prev); s.delete(id); return s; });
       reload();
       toast.success("Produto excluído");
     }
+  }
+
+  function handleDeleteSelected() {
+    if (!confirm(`Excluir ${selected.size} produto(s) selecionado(s)?`)) return;
+    selected.forEach((id) => deleteProduct(id));
+    setSelected(new Set());
+    reload();
+    toast.success(`${selected.size} produto(s) excluído(s)`);
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+  const someFilteredSelected = filtered.some((p) => selected.has(p.id)) && !allFilteredSelected;
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelected((prev) => {
+        const s = new Set(prev);
+        filtered.forEach((p) => s.delete(p.id));
+        return s;
+      });
+    } else {
+      setSelected((prev) => {
+        const s = new Set(prev);
+        filtered.forEach((p) => s.add(p.id));
+        return s;
+      });
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      return s;
+    });
   }
 
   function handleStockEntry() {
@@ -152,6 +189,42 @@ function Estoque() {
         ))}
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "10px 16px", marginBottom: 14,
+          background: "oklch(0.72 0.130 73 / 0.10)",
+          border: "1px solid oklch(0.72 0.130 73 / 0.35)",
+          borderRadius: 10,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>
+            {selected.size} selecionado{selected.size !== 1 ? "s" : ""}
+          </span>
+          <div style={{ height: 16, width: 1, background: "var(--border)" }} />
+          <button
+            onClick={() => setSelected(new Set())}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-foreground)", fontSize: 12, fontFamily: "Syne", fontWeight: 600, padding: "4px 8px", borderRadius: 6 }}
+          >
+            Limpar seleção
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={handleDeleteSelected}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "7px 14px",
+              background: "oklch(0.60 0.20 25 / 0.15)",
+              border: "1px solid oklch(0.60 0.20 25 / 0.4)",
+              borderRadius: 7, cursor: "pointer",
+              color: "oklch(0.72 0.20 25)", fontSize: 12, fontWeight: 700, fontFamily: "Syne",
+            }}
+          >
+            <Trash2 size={13} /> Excluir selecionados
+          </button>
+        </div>
+      )}
+
       {/* Filters */}
       <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center" }}>
         <div style={{ position: "relative", flex: 1 }}>
@@ -184,6 +257,19 @@ function Estoque() {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--surface-1)", borderBottom: "1px solid var(--border)" }}>
+              <th style={{ padding: "11px 12px 11px 16px", width: 40 }}>
+                <button
+                  onClick={toggleSelectAll}
+                  title={allFilteredSelected ? "Desmarcar todos" : "Selecionar todos"}
+                  style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: allFilteredSelected || someFilteredSelected ? "var(--gold)" : "var(--muted-foreground)" }}
+                >
+                  {allFilteredSelected
+                    ? <CheckSquare size={16} />
+                    : someFilteredSelected
+                    ? <MinusSquare size={16} />
+                    : <Square size={16} />}
+                </button>
+              </th>
               {["Produto", "SKU", "Categoria", "Qtd", "Preço", "Custo", "Margem", "Ações"].map((h) => (
                 <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>
                   {h.toUpperCase()}
@@ -195,12 +281,24 @@ function Estoque() {
             {filtered.map((p, i) => {
               const margin = ((p.price - p.cost) / p.price) * 100;
               const isLow = p.quantity <= p.minQuantity;
+              const isSelected = selected.has(p.id);
               return (
                 <tr key={p.id}
-                  style={{ borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none" }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+                  style={{
+                    borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
+                    background: isSelected ? "oklch(0.72 0.130 73 / 0.06)" : "transparent",
+                  }}
+                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--surface-1)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isSelected ? "oklch(0.72 0.130 73 / 0.06)" : "transparent"; }}
                 >
+                  <td style={{ padding: "13px 12px 13px 16px", width: 40 }}>
+                    <button
+                      onClick={() => toggleSelect(p.id)}
+                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: isSelected ? "var(--gold)" : "var(--muted-foreground)" }}
+                    >
+                      {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+                    </button>
+                  </td>
                   <td style={{ padding: "13px 16px" }}>
                     <p style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</p>
                     {(p.color || p.model) && (
