@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type {
   Product, Sale, SaleItem, StockMovement,
-  AppUser, UserRole, TabKey, PaymentMethod,
+  AppUser, UserRole, TabKey, PaymentMethod, PermissionKey,
 } from './types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ function mapUser(r: any): AppUser {
     phone: r.phone ?? undefined, email: r.email ?? undefined,
     active: r.active,
     allowedTabs: (r.allowed_tabs ?? ['dashboard', 'pdv']) as TabKey[],
+    permissions: (r.permissions ?? []) as PermissionKey[],
   }
 }
 
@@ -74,13 +75,14 @@ export async function getUsers(): Promise<AppUser[]> {
 
 export async function createUser(u: {
   username: string; password: string; name: string; role: UserRole
-  phone?: string; email?: string; allowedTabs: TabKey[]
+  phone?: string; email?: string; allowedTabs: TabKey[]; permissions?: PermissionKey[]
 }): Promise<AppUser> {
   const hash = await hashPassword(u.password)
   const { data, error } = await supabase.from('users').insert({
     username: u.username, password_hash: hash, name: u.name, role: u.role,
     phone: u.phone || null, email: u.email || null,
     active: true, allowed_tabs: u.allowedTabs,
+    permissions: u.permissions ?? [],
   }).select().single()
   if (error) throw error
   return mapUser(data)
@@ -88,15 +90,16 @@ export async function createUser(u: {
 
 export async function updateUser(id: string, changes: {
   name?: string; phone?: string; email?: string
-  active?: boolean; allowedTabs?: TabKey[]; password?: string
+  active?: boolean; allowedTabs?: TabKey[]; password?: string; permissions?: PermissionKey[]
 }): Promise<void> {
   const update: any = {}
-  if (changes.name !== undefined)       update.name = changes.name
-  if (changes.phone !== undefined)      update.phone = changes.phone || null
-  if (changes.email !== undefined)      update.email = changes.email || null
-  if (changes.active !== undefined)     update.active = changes.active
+  if (changes.name !== undefined)        update.name = changes.name
+  if (changes.phone !== undefined)       update.phone = changes.phone || null
+  if (changes.email !== undefined)       update.email = changes.email || null
+  if (changes.active !== undefined)      update.active = changes.active
   if (changes.allowedTabs !== undefined) update.allowed_tabs = changes.allowedTabs
-  if (changes.password)                 update.password_hash = await hashPassword(changes.password)
+  if (changes.permissions !== undefined) update.permissions = changes.permissions
+  if (changes.password)                  update.password_hash = await hashPassword(changes.password)
   const { error } = await supabase.from('users').update(update).eq('id', id)
   if (error) throw error
 }
@@ -156,38 +159,41 @@ export async function getSales(limit?: number): Promise<Sale[]> {
   return (data ?? []).map(mapSale)
 }
 
-export async function getSalesToday(): Promise<Sale[]> {
+export async function getSalesToday(sellerId?: string): Promise<Sale[]> {
   const start = new Date(); start.setHours(0, 0, 0, 0)
-  const { data, error } = await supabase
-    .from('sales').select('*, sale_items(*)')
+  let q = supabase.from('sales').select('*, sale_items(*)')
     .gte('created_at', start.toISOString())
     .order('created_at', { ascending: false })
+  if (sellerId) q = q.eq('seller_id', sellerId)
+  const { data, error } = await q
   if (error) throw error
   return (data ?? []).map(mapSale)
 }
 
-export async function getSalesThisMonth(): Promise<Sale[]> {
+export async function getSalesThisMonth(sellerId?: string): Promise<Sale[]> {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const { data, error } = await supabase
-    .from('sales').select('*, sale_items(*)')
+  let q = supabase.from('sales').select('*, sale_items(*)')
     .gte('created_at', start.toISOString())
     .order('created_at', { ascending: false })
+  if (sellerId) q = q.eq('seller_id', sellerId)
+  const { data, error } = await q
   if (error) throw error
   return (data ?? []).map(mapSale)
 }
 
-export async function getLast7DaysRevenue(): Promise<{ date: string; total: number }[]> {
+export async function getLast7DaysRevenue(sellerId?: string): Promise<{ date: string; total: number }[]> {
   const results: { date: string; total: number }[] = []
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
     const start = new Date(d); start.setHours(0, 0, 0, 0)
     const end = new Date(d); end.setHours(23, 59, 59, 999)
-    const { data } = await supabase
-      .from('sales').select('total')
+    let q = supabase.from('sales').select('total')
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString())
+    if (sellerId) q = q.eq('seller_id', sellerId)
+    const { data } = await q
     const total = (data ?? []).reduce((s: number, v: any) => s + Number(v.total), 0)
     results.push({ date: d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' }), total })
   }

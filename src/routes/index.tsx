@@ -26,6 +26,7 @@ import {
   getSales,
   getUsers,
 } from "../lib/db";
+import { useAuth } from "../lib/auth";
 import type { AppUser } from "../lib/types";
 
 export const Route = createFileRoute("/")({
@@ -116,29 +117,31 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 function Dashboard() {
-  const { data: salesToday = [] } = useQuery({ queryKey: ["salesToday"], queryFn: getSalesToday });
-  const { data: salesMonth = [] } = useQuery({ queryKey: ["salesMonth"], queryFn: getSalesThisMonth });
-  const { data: chartData = [] } = useQuery({ queryKey: ["chart7days"], queryFn: getLast7DaysRevenue });
-  const { data: lowStock = [] } = useQuery({ queryKey: ["lowStock"], queryFn: getLowStockProducts });
-  const { data: recentSalesRaw = [] } = useQuery({ queryKey: ["recentSales"], queryFn: () => getSales(8) });
-  const { data: users = [] } = useQuery<AppUser[]>({ queryKey: ["users"], queryFn: getUsers });
+  const { user: me } = useAuth();
+  const isSeller = me?.role === "seller";
+  const sellerId = isSeller ? me!.id : undefined;
 
-  const recentSales = useMemo(() =>
-    [...recentSalesRaw].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8),
-    [recentSalesRaw]
-  );
+  const { data: salesToday = [] } = useQuery({ queryKey: ["salesToday", sellerId], queryFn: () => getSalesToday(sellerId) });
+  const { data: salesMonth = [] } = useQuery({ queryKey: ["salesMonth", sellerId], queryFn: () => getSalesThisMonth(sellerId) });
+  const { data: chartData = [] } = useQuery({ queryKey: ["chart7days", sellerId], queryFn: () => getLast7DaysRevenue(sellerId) });
+  const { data: lowStock = [] } = useQuery({ queryKey: ["lowStock"], queryFn: getLowStockProducts });
+  const { data: recentSalesRaw = [] } = useQuery({ queryKey: ["recentSales", sellerId], queryFn: () => getSales(8) });
+  const { data: users = [] } = useQuery<AppUser[]>({ queryKey: ["users"], queryFn: getUsers, enabled: !isSeller });
+
+  const recentSales = useMemo(() => {
+    const all = [...recentSalesRaw];
+    if (isSeller) return all.filter(s => s.sellerId === sellerId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
+    return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
+  }, [recentSalesRaw, isSeller, sellerId]);
 
   const ranking = useMemo(() => {
+    if (isSeller) return [];
     const sellers = users.filter((u) => u.role === "seller" && u.active);
     return sellers.map((user) => {
       const mine = salesMonth.filter((s) => s.sellerId === user.id);
-      return {
-        user,
-        total: mine.reduce((s, v) => s + v.total, 0),
-        count: mine.length,
-      };
+      return { user, total: mine.reduce((s, v) => s + v.total, 0), count: mine.length };
     }).sort((a, b) => b.total - a.total);
-  }, [users, salesMonth]);
+  }, [users, salesMonth, isSeller]);
 
   const todayRevenue = salesToday.reduce((s, v) => s + v.total, 0);
   const monthRevenue = salesMonth.reduce((s, v) => s + v.total, 0);
@@ -155,14 +158,16 @@ function Dashboard() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <h1 className="font-display" style={{ fontSize: 32, fontWeight: 600, color: "var(--foreground)", lineHeight: 1 }}>
-              {greet} 👋
+              {greet}, {me?.name.split(" ")[0]} 👋
             </h1>
             <p style={{ color: "var(--muted-foreground)", marginTop: 6, fontSize: 14 }}>
               {now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
-            <p style={{ fontSize: 11, color: "var(--muted-foreground)", letterSpacing: "0.12em", fontWeight: 700 }}>FATURAMENTO DO MÊS</p>
+            <p style={{ fontSize: 11, color: "var(--muted-foreground)", letterSpacing: "0.12em", fontWeight: 700 }}>
+              {isSeller ? "SUAS VENDAS NO MÊS" : "FATURAMENTO DO MÊS"}
+            </p>
             <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 700, color: "var(--gold)" }}>{fmt(monthRevenue)}</p>
           </div>
         </div>
@@ -171,17 +176,19 @@ function Dashboard() {
 
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
-        <KpiCard label="FATURAMENTO HOJE" value={fmt(todayRevenue)} sub={`${salesToday.length} venda${salesToday.length !== 1 ? "s" : ""}`} icon={TrendingUp} accent />
+        <KpiCard label={isSeller ? "SUAS VENDAS HOJE" : "FATURAMENTO HOJE"} value={fmt(todayRevenue)} sub={`${salesToday.length} venda${salesToday.length !== 1 ? "s" : ""}`} icon={TrendingUp} accent />
         <KpiCard label="VENDAS HOJE" value={String(salesToday.length)} sub="transações concluídas" icon={ShoppingBag} />
         <KpiCard label="LUCRO ESTIMADO" value={fmt(todayProfit)} sub="margem ~35%" icon={ArrowUpRight} />
         <KpiCard label="ESTOQUE BAIXO" value={String(lowStock.length)} sub={lowStock.length > 0 ? "precisam de reposição" : "tudo em dia"} icon={AlertTriangle} alert={lowStock.length > 0} />
       </div>
 
       {/* Chart + Ranking */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isSeller ? "1fr" : "1fr 320px", gap: 20, marginBottom: 20 }}>
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>FATURAMENTO — ÚLTIMOS 7 DIAS</p>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>
+              {isSeller ? "SUAS VENDAS — ÚLTIMOS 7 DIAS" : "FATURAMENTO — ÚLTIMOS 7 DIAS"}
+            </p>
             <p className="font-mono-num" style={{ fontSize: 13, color: "var(--gold)" }}>{fmt(chartData.reduce((s, d) => s + d.total, 0))}</p>
           </div>
           <ResponsiveContainer width="100%" height={200}>
@@ -195,32 +202,34 @@ function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-            <Trophy size={14} style={{ color: "var(--gold)" }} />
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>RANKING DO MÊS</p>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {ranking.length === 0 && (
-              <p style={{ fontSize: 13, color: "var(--muted-foreground)", textAlign: "center", paddingTop: 20 }}>Sem dados ainda</p>
-            )}
-            {ranking.map(({ user, total, count }, i) => (
-              <div key={user.id}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: i === 0 ? "var(--gold)" : "var(--muted-foreground)", width: 18, fontFamily: "JetBrains Mono" }}>#{i + 1}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{user.name.split(" ")[0]}</span>
-                    <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{count}v</span>
+        {!isSeller && (
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+              <Trophy size={14} style={{ color: "var(--gold)" }} />
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>RANKING DO MÊS</p>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {ranking.length === 0 && (
+                <p style={{ fontSize: 13, color: "var(--muted-foreground)", textAlign: "center", paddingTop: 20 }}>Sem dados ainda</p>
+              )}
+              {ranking.map(({ user, total, count }, i) => (
+                <div key={user.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: i === 0 ? "var(--gold)" : "var(--muted-foreground)", width: 18, fontFamily: "JetBrains Mono" }}>#{i + 1}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>{user.name.split(" ")[0]}</span>
+                      <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{count}v</span>
+                    </div>
+                    <span className="font-mono-num" style={{ fontSize: 13, color: i === 0 ? "var(--gold)" : "var(--foreground)", fontWeight: 600 }}>{fmt(total)}</span>
                   </div>
-                  <span className="font-mono-num" style={{ fontSize: 13, color: i === 0 ? "var(--gold)" : "var(--foreground)", fontWeight: 600 }}>{fmt(total)}</span>
+                  <div style={{ height: 3, background: "var(--surface-2)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(total / maxRanking) * 100}%`, background: i === 0 ? "var(--gold)" : "var(--surface-3)", borderRadius: 2 }} />
+                  </div>
                 </div>
-                <div style={{ height: 3, background: "var(--surface-2)", borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(total / maxRanking) * 100}%`, background: i === 0 ? "var(--gold)" : "var(--surface-3)", borderRadius: 2 }} />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Recent sales + Low stock */}
@@ -228,7 +237,9 @@ function Dashboard() {
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
             <Clock size={14} style={{ color: "var(--gold)" }} />
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>ÚLTIMAS VENDAS</p>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>
+              {isSeller ? "SUAS ÚLTIMAS VENDAS" : "ÚLTIMAS VENDAS"}
+            </p>
           </div>
           {recentSales.length === 0 ? (
             <p style={{ padding: "32px", textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>Nenhuma venda registrada</p>
@@ -236,7 +247,7 @@ function Dashboard() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "var(--surface-1)" }}>
-                  {["Produto", "Vendedor", "Pagamento", "Total", "Hora"].map((h) => (
+                  {["Produto", ...(isSeller ? [] : ["Vendedor"]), "Pagamento", "Total", "Hora"].map((h) => (
                     <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>
                       {h.toUpperCase()}
                     </th>
@@ -254,7 +265,7 @@ function Dashboard() {
                       {sale.items[0]?.productName.split(" ").slice(0, 3).join(" ")}
                       {sale.items.length > 1 && <span style={{ color: "var(--muted-foreground)", fontSize: 11 }}> +{sale.items.length - 1}</span>}
                     </td>
-                    <td style={{ padding: "11px 16px", fontSize: 13, color: "var(--muted-foreground)" }}>{sale.sellerName.split(" ")[0]}</td>
+                    {!isSeller && <td style={{ padding: "11px 16px", fontSize: 13, color: "var(--muted-foreground)" }}>{sale.sellerName.split(" ")[0]}</td>}
                     <td style={{ padding: "11px 16px" }}>
                       <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "var(--surface-2)", color: "var(--muted-foreground)" }}>
                         {PAYMENT_LABELS[sale.paymentMethod]}

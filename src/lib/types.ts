@@ -13,6 +13,16 @@ export const TAB_LABELS: Record<TabKey, string> = {
   relatorios: 'Relatórios',
 }
 
+export const ALL_PERMISSIONS = ['product_create', 'product_edit', 'product_delete', 'stock_entry'] as const
+export type PermissionKey = (typeof ALL_PERMISSIONS)[number]
+
+export const PERMISSION_LABELS: Record<PermissionKey, string> = {
+  product_create: 'Cadastrar produto',
+  product_edit: 'Editar produto',
+  product_delete: 'Excluir produto',
+  stock_entry: 'Entrada de estoque',
+}
+
 export interface AppUser {
   id: string
   username: string
@@ -22,6 +32,7 @@ export interface AppUser {
   email?: string
   active: boolean
   allowedTabs: TabKey[]
+  permissions: PermissionKey[]
 }
 
 export interface Product {

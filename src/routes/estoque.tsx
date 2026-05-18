@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Search, Edit2, Trash2, ArrowDown, Package, AlertTriangle, DollarSign, X, Check, CheckSquare, Square, MinusSquare } from "lucide-react";
 import { getProducts, addProduct, updateProduct, deleteProduct, addStockEntry } from "../lib/db";
+import { useAuth } from "../lib/auth";
 import type { Product } from "../lib/types";
 
 export const Route = createFileRoute("/estoque")({
@@ -21,6 +22,10 @@ const EMPTY_FORM = {
 };
 
 function Estoque() {
+  const { user: me } = useAuth();
+  const isAdmin = me?.role === "admin";
+  const can = (p: string) => isAdmin || (me?.permissions ?? []).includes(p as any);
+
   const queryClient = useQueryClient();
   const { data: products = [], isLoading } = useQuery({ queryKey: ["products"], queryFn: getProducts });
 
@@ -200,19 +205,21 @@ function Estoque() {
           <h1 className="font-display" style={{ fontSize: 28, fontWeight: 600, color: "var(--foreground)", lineHeight: 1 }}>Estoque</h1>
           <p style={{ color: "var(--muted-foreground)", fontSize: 13, marginTop: 4 }}>{products.length} produtos cadastrados</p>
         </div>
-        <button
-          onClick={openAdd}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "10px 20px",
-            background: "linear-gradient(135deg, oklch(0.78 0.130 78), oklch(0.65 0.130 68))",
-            border: "none", borderRadius: 9, cursor: "pointer",
-            color: "oklch(0.07 0.010 74)", fontWeight: 700, fontSize: 13, fontFamily: "Syne",
-            boxShadow: "0 4px 14px oklch(0.72 0.130 73 / 0.35)",
-          }}
-        >
-          <Plus size={16} /> Novo Produto
-        </button>
+        {can("product_create") && (
+          <button
+            onClick={openAdd}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "10px 20px",
+              background: "linear-gradient(135deg, oklch(0.78 0.130 78), oklch(0.65 0.130 68))",
+              border: "none", borderRadius: 9, cursor: "pointer",
+              color: "oklch(0.07 0.010 74)", fontWeight: 700, fontSize: 13, fontFamily: "Syne",
+              boxShadow: "0 4px 14px oklch(0.72 0.130 73 / 0.35)",
+            }}
+          >
+            <Plus size={16} /> Novo Produto
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -386,25 +393,31 @@ function Estoque() {
                     </td>
                     <td style={{ padding: "13px 16px" }}>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={() => setStockModal({ product: p, qty: "", reason: "" })}
-                          title="Entrada de estoque"
-                          style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.62 0.16 145 / 0.15)", border: "1px solid oklch(0.62 0.16 145 / 0.3)", cursor: "pointer", color: "oklch(0.62 0.16 145)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >
-                          <ArrowDown size={13} />
-                        </button>
-                        <button
-                          onClick={() => openEdit(p)}
-                          style={{ width: 28, height: 28, borderRadius: 6, background: "var(--surface-2)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.60 0.20 25 / 0.12)", border: "1px solid oklch(0.60 0.20 25 / 0.25)", cursor: "pointer", color: "oklch(0.65 0.22 25)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {can("stock_entry") && (
+                          <button
+                            onClick={() => setStockModal({ product: p, qty: "", reason: "" })}
+                            title="Entrada de estoque"
+                            style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.62 0.16 145 / 0.15)", border: "1px solid oklch(0.62 0.16 145 / 0.3)", cursor: "pointer", color: "oklch(0.62 0.16 145)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >
+                            <ArrowDown size={13} />
+                          </button>
+                        )}
+                        {can("product_edit") && (
+                          <button
+                            onClick={() => openEdit(p)}
+                            style={{ width: 28, height: 28, borderRadius: 6, background: "var(--surface-2)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                        )}
+                        {can("product_delete") && (
+                          <button
+                            onClick={() => handleDelete(p.id)}
+                            style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.60 0.20 25 / 0.12)", border: "1px solid oklch(0.60 0.20 25 / 0.25)", cursor: "pointer", color: "oklch(0.65 0.22 25)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

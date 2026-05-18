@@ -11,8 +11,8 @@ import {
 } from 'lucide-react'
 import { getUsers, createUser, updateUser, deleteUser, getSalesThisMonth } from '../lib/db'
 import { useAuth } from '../lib/auth'
-import { ALL_TABS, TAB_LABELS } from '../lib/types'
-import type { AppUser, UserRole, TabKey } from '../lib/types'
+import { ALL_TABS, TAB_LABELS, ALL_PERMISSIONS, PERMISSION_LABELS } from '../lib/types'
+import type { AppUser, UserRole, TabKey, PermissionKey } from '../lib/types'
 
 export const Route = createFileRoute('/admin')({
   component: AdminPanel,
@@ -120,6 +120,11 @@ function AdminPanel() {
     onSuccess: reload,
   })
 
+  const permMut = useMutation({
+    mutationFn: ({ id, permissions }: { id: string; permissions: PermissionKey[] }) => updateUser(id, { permissions }),
+    onSuccess: reload,
+  })
+
   function openAdd() { setEditingId(null); setForm(EMPTY_FORM); setShowModal(true) }
   function openEdit(u: AppUser) {
     setEditingId(u.id)
@@ -131,6 +136,14 @@ function AdminPanel() {
     tabMut.mutate({ id: u.id, tabs: next })
     qc.setQueryData(['users'], (old: AppUser[] | undefined) =>
       (old ?? []).map(x => x.id === u.id ? { ...x, allowedTabs: next } : x)
+    )
+  }
+
+  function togglePerm(u: AppUser, perm: PermissionKey) {
+    const next = u.permissions.includes(perm) ? u.permissions.filter(p => p !== perm) : [...u.permissions, perm]
+    permMut.mutate({ id: u.id, permissions: next })
+    qc.setQueryData(['users'], (old: AppUser[] | undefined) =>
+      (old ?? []).map(x => x.id === u.id ? { ...x, permissions: next } : x)
     )
   }
 
@@ -310,7 +323,7 @@ function AdminPanel() {
                 </button>
               </div>
             </div>
-            <div>
+            <div style={{ marginBottom: 12 }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--muted-foreground)', marginBottom: 8 }}>ABAS VISÍVEIS</p>
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {ALL_TABS.map(tab => {
@@ -323,6 +336,24 @@ function AdminPanel() {
                       color: allowed ? GOLD : 'var(--muted-foreground)', transition: 'all 0.12s',
                     }}>
                       {allowed ? '✓ ' : ''}{TAB_LABELS[tab]}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--muted-foreground)', marginBottom: 8 }}>PERMISSÕES DE AÇÃO</p>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {ALL_PERMISSIONS.map(perm => {
+                  const granted = u.permissions.includes(perm)
+                  return (
+                    <button key={perm} onClick={() => togglePerm(u, perm)} style={{
+                      padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                      border: granted ? '1px solid oklch(0.62 0.16 145 / 0.5)' : '1px solid var(--border)',
+                      background: granted ? 'oklch(0.62 0.16 145 / 0.12)' : 'transparent',
+                      color: granted ? 'oklch(0.62 0.16 145)' : 'var(--muted-foreground)', transition: 'all 0.12s',
+                    }}>
+                      {granted ? '✓ ' : ''}{PERMISSION_LABELS[perm]}
                     </button>
                   )
                 })}
