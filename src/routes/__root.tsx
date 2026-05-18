@@ -7,6 +7,7 @@ import {
   HeadContent,
   Scripts,
   useRouterState,
+  useNavigate,
 } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 import {
@@ -16,22 +17,38 @@ import {
   Users,
   BarChart3,
   Diamond,
-  TrendingUp,
+  Shield,
+  LogOut,
+  User,
 } from "lucide-react";
+import { useEffect } from "react";
+import { AuthProvider, useAuth } from "../lib/auth";
+import type { TabKey } from "../lib/types";
 
 import appCss from "../styles.css?url";
 
-const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/pdv", label: "PDV / Caixa", icon: ShoppingCart },
-  { to: "/estoque", label: "Estoque", icon: Package },
-  { to: "/vendedores", label: "Vendedores", icon: Users },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
+const NAV_ITEMS: { to: string; label: string; icon: React.ElementType; tabKey: TabKey; exact?: boolean }[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, tabKey: "dashboard", exact: true },
+  { to: "/pdv", label: "PDV / Caixa", icon: ShoppingCart, tabKey: "pdv" },
+  { to: "/estoque", label: "Estoque", icon: Package, tabKey: "estoque" },
+  { to: "/vendedores", label: "Vendedores", icon: Users, tabKey: "vendedores" },
+  { to: "/relatorios", label: "Relatórios", icon: BarChart3, tabKey: "relatorios" },
 ];
 
 function Sidebar() {
   const router = useRouterState();
   const pathname = router.location.pathname;
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const visibleItems = user?.role === "admin"
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => user?.allowedTabs?.includes(item.tabKey));
+
+  function handleLogout() {
+    logout();
+    navigate({ to: "/login" });
+  }
 
   return (
     <aside
@@ -72,7 +89,7 @@ function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <nav className="flex-1 px-3 py-4" style={{ display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
         <p
           style={{
             fontSize: 10,
@@ -86,10 +103,10 @@ function Sidebar() {
         >
           MENU
         </p>
-        {NAV_ITEMS.map(({ to, label, icon: Icon, exact }) => {
-          const active = exact ? pathname === to : pathname.startsWith(to) && to !== "/";
+        {visibleItems.map(({ to, label, icon: Icon, exact }) => {
+          const isActive = exact ? pathname === to : pathname.startsWith(to) && to !== "/";
           const isExactHome = to === "/" && pathname === "/";
-          const isActive = isExactHome || (!exact && pathname.startsWith(to) && to !== "/") || (exact && active);
+          const active = isExactHome || (!exact && isActive) || (exact && isActive);
           return (
             <Link
               key={to}
@@ -101,36 +118,86 @@ function Sidebar() {
                 padding: "10px 12px",
                 borderRadius: 8,
                 fontSize: 14,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? "var(--gold)" : "var(--muted-foreground)",
-                background: isActive ? "var(--sidebar-accent)" : "transparent",
-                borderLeft: isActive ? "2px solid var(--gold)" : "2px solid transparent",
+                fontWeight: active ? 600 : 400,
+                color: active ? "var(--gold)" : "var(--muted-foreground)",
+                background: active ? "var(--sidebar-accent)" : "transparent",
+                borderLeft: active ? "2px solid var(--gold)" : "2px solid transparent",
                 transition: "all 0.15s ease",
                 textDecoration: "none",
               }}
               onMouseEnter={(e) => {
-                if (!isActive) {
+                if (!active) {
                   (e.currentTarget as HTMLElement).style.color = "var(--foreground)";
                   (e.currentTarget as HTMLElement).style.background = "var(--surface-2)";
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isActive) {
+                if (!active) {
                   (e.currentTarget as HTMLElement).style.color = "var(--muted-foreground)";
                   (e.currentTarget as HTMLElement).style.background = "transparent";
                 }
               }}
             >
-              <Icon size={17} strokeWidth={isActive ? 2.5 : 2} />
+              <Icon size={17} strokeWidth={active ? 2.5 : 2} />
               <span>{label}</span>
             </Link>
           );
         })}
+
+        {user?.role === "admin" && (
+          <>
+            <p
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.15em",
+                color: "var(--muted-foreground)",
+                paddingLeft: 12,
+                paddingBottom: 8,
+                paddingTop: 14,
+              }}
+            >
+              ADMINISTRAÇÃO
+            </p>
+            <Link
+              to="/admin"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: pathname === "/admin" ? 600 : 400,
+                color: pathname === "/admin" ? "var(--gold)" : "var(--muted-foreground)",
+                background: pathname === "/admin" ? "var(--sidebar-accent)" : "transparent",
+                borderLeft: pathname === "/admin" ? "2px solid var(--gold)" : "2px solid transparent",
+                transition: "all 0.15s ease",
+                textDecoration: "none",
+              }}
+              onMouseEnter={(e) => {
+                if (pathname !== "/admin") {
+                  (e.currentTarget as HTMLElement).style.color = "var(--foreground)";
+                  (e.currentTarget as HTMLElement).style.background = "var(--surface-2)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (pathname !== "/admin") {
+                  (e.currentTarget as HTMLElement).style.color = "var(--muted-foreground)";
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }
+              }}
+            >
+              <Shield size={17} strokeWidth={pathname === "/admin" ? 2.5 : 2} />
+              <span>Painel Admin</span>
+            </Link>
+          </>
+        )}
       </nav>
 
       {/* Footer */}
       <div
-        className="px-5 py-4"
+        className="px-4 py-4"
         style={{ borderTop: "1px solid var(--sidebar-border)" }}
       >
         <div className="flex items-center gap-3">
@@ -143,15 +210,83 @@ function Sidebar() {
               flexShrink: 0,
             }}
           >
-            <TrendingUp size={15} style={{ color: "var(--gold)" }} />
+            <User size={15} style={{ color: "var(--gold)" }} />
           </div>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>Minha Loja</p>
-            <p style={{ fontSize: 11, color: "var(--muted-foreground)" }}>Plano Pro</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user?.name ?? ""}
+            </p>
+            <p style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
+              {user?.role === "admin" ? "Administrador" : "Vendedor"}
+            </p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Sair"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--muted-foreground)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 6,
+              borderRadius: 6,
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "oklch(0.70 0.22 25)";
+              (e.currentTarget as HTMLElement).style.background = "oklch(0.60 0.20 25 / 0.10)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--muted-foreground)";
+              (e.currentTarget as HTMLElement).style.background = "none";
+            }}
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </aside>
+  );
+}
+
+// ── Auth guard ────────────────────────────────────────────────────────────────
+
+function AppLayout() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const router = useRouterState();
+  const pathname = router.location.pathname;
+
+  useEffect(() => {
+    if (!user && pathname !== "/login") {
+      navigate({ to: "/login" });
+    }
+  }, [user, pathname]);
+
+  if (pathname === "/login") {
+    return <Outlet />;
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      <Sidebar />
+      <main
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          background: "var(--background)",
+        }}
+      >
+        <Outlet />
+      </main>
+    </div>
   );
 }
 
@@ -224,14 +359,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "StockMóveis — Gestão Comercial" },
       { name: "description", content: "Sistema de gestão comercial para lojas de móveis" },
-      { property: "og:title", content: "StockMóveis — Gestão Comercial" },
-      { name: "twitter:title", content: "StockMóveis — Gestão Comercial" },
-      { property: "og:description", content: "Sistema de gestão comercial para lojas de móveis" },
-      { name: "twitter:description", content: "Sistema de gestão comercial para lojas de móveis" },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/24487242-679c-4815-840f-bc1acca50fb3/id-preview-93de924e--ea202657-8b22-43e7-aff9-300011d6d96d.lovable.app-1779112434384.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/24487242-679c-4815-840f-bc1acca50fb3/id-preview-93de924e--ea202657-8b22-43e7-aff9-300011d6d96d.lovable.app-1779112434384.png" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { property: "og:type", content: "website" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -268,30 +395,21 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-        <Sidebar />
-        <main
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            background: "var(--background)",
+      <AuthProvider>
+        <AppLayout />
+        <Toaster
+          position="top-right"
+          theme="dark"
+          richColors
+          toastOptions={{
+            style: {
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              color: "var(--foreground)",
+            },
           }}
-        >
-          <Outlet />
-        </main>
-      </div>
-      <Toaster
-        position="top-right"
-        theme="dark"
-        richColors
-        toastOptions={{
-          style: {
-            background: "var(--card)",
-            border: "1px solid var(--border)",
-            color: "var(--foreground)",
-          },
-        }}
-      />
+        />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

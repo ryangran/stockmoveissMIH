@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Search, Edit2, Trash2, ArrowDown, Package, AlertTriangle, DollarSign, X, Check, CheckSquare, Square, MinusSquare } from "lucide-react";
-import { getProducts, addProduct, updateProduct, deleteProduct, addStockEntry } from "../lib/store";
+import { getProducts, addProduct, updateProduct, deleteProduct, addStockEntry } from "../lib/db";
 import type { Product } from "../lib/types";
 
 export const Route = createFileRoute("/estoque")({
@@ -20,7 +21,9 @@ const EMPTY_FORM = {
 };
 
 function Estoque() {
-  const [products, setProducts] = useState<Product[]>(() => getProducts());
+  const queryClient = useQueryClient();
+  const { data: products = [], isLoading } = useQuery({ queryKey: ["products"], queryFn: getProducts });
+
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todos");
   const [showModal, setShowModal] = useState(false);
@@ -29,7 +32,50 @@ function Estoque() {
   const [stockModal, setStockModal] = useState<{ product: Product; qty: string; reason: string } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const reload = () => setProducts(getProducts());
+  const addMutation = useMutation({
+    mutationFn: (data: Omit<Product, "id">) => addProduct(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["lowStock"] });
+      toast.success("Produto cadastrado");
+      setShowModal(false);
+    },
+    onError: () => toast.error("Erro ao cadastrar produto"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: Partial<Product> }) => updateProduct(id, changes),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["lowStock"] });
+      toast.success("Produto atualizado");
+      setShowModal(false);
+    },
+    onError: () => toast.error("Erro ao atualizar produto"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteProduct(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["lowStock"] });
+      setSelected((prev) => { const s = new Set(prev); s.delete(id); return s; });
+      toast.success("Produto excluído");
+    },
+    onError: () => toast.error("Erro ao excluir produto"),
+  });
+
+  const stockMutation = useMutation({
+    mutationFn: ({ productId, quantity, reason }: { productId: string; quantity: number; reason: string }) =>
+      addStockEntry(productId, quantity, reason),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["lowStock"] });
+      toast.success(`+${vars.quantity} unidades adicionadas`);
+      setStockModal(null);
+    },
+    onError: () => toast.error("Erro ao registrar entrada"),
+  });
 
   const categories = useMemo(() => ["Todos", ...CATEGORIES], []);
 
@@ -78,31 +124,39 @@ function Estoque() {
       model: form.model || undefined,
     };
     if (editingId) {
-      updateProduct(editingId, data);
-      toast.success("Produto atualizado");
+      updateMutation.mutate({ id: editingId, changes: data });
     } else {
-      addProduct(data);
-      toast.success("Produto cadastrado");
+      addMutation.mutate(data);
     }
-    reload();
-    setShowModal(false);
   }
 
   function handleDelete(id: string) {
     if (confirm("Excluir este produto?")) {
-      deleteProduct(id);
-      setSelected((prev) => { const s = new Set(prev); s.delete(id); return s; });
-      reload();
-      toast.success("Produto excluído");
+      deleteMutation.mutate(id);
     }
   }
 
-  function handleDeleteSelected() {
+  async function handleDeleteSelected() {
     if (!confirm(`Excluir ${selected.size} produto(s) selecionado(s)?`)) return;
-    selected.forEach((id) => deleteProduct(id));
+    const count = selected.size;
+    for (const id of Array.from(selected)) {
+      await deleteProduct(id);
+    }
     setSelected(new Set());
-    reload();
-    toast.success(`${selected.size} produto(s) excluído(s)`);
+    queryClient.invalidateQueries({ queryKey: ["products"] });
+    queryClient.invalidateQueries({ queryKey: ["lowStock"] });
+    toast.success(`${count} produto(s) excluído(s)`);
+  }
+
+  function handleStockEntry() {
+    if (!stockModal) return;
+    const qty = parseInt(stockModal.qty);
+    if (!qty || qty <= 0) { toast.error("Informe uma quantidade válida"); return; }
+    stockMutation.mutate({
+      productId: stockModal.product.id,
+      quantity: qty,
+      reason: stockModal.reason || "Entrada manual",
+    });
   }
 
   const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
@@ -130,16 +184,6 @@ function Estoque() {
       s.has(id) ? s.delete(id) : s.add(id);
       return s;
     });
-  }
-
-  function handleStockEntry() {
-    if (!stockModal) return;
-    const qty = parseInt(stockModal.qty);
-    if (!qty || qty <= 0) { toast.error("Informe uma quantidade válida"); return; }
-    addStockEntry(stockModal.product.id, qty, stockModal.reason || "Entrada manual");
-    reload();
-    toast.success(`+${qty} unidades adicionadas`);
-    setStockModal(null);
   }
 
   const inputStyle = {
@@ -254,116 +298,122 @@ function Estoque() {
 
       {/* Table */}
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "var(--surface-1)", borderBottom: "1px solid var(--border)" }}>
-              <th style={{ padding: "11px 12px 11px 16px", width: 40 }}>
-                <button
-                  onClick={toggleSelectAll}
-                  title={allFilteredSelected ? "Desmarcar todos" : "Selecionar todos"}
-                  style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: allFilteredSelected || someFilteredSelected ? "var(--gold)" : "var(--muted-foreground)" }}
-                >
-                  {allFilteredSelected
-                    ? <CheckSquare size={16} />
-                    : someFilteredSelected
-                    ? <MinusSquare size={16} />
-                    : <Square size={16} />}
-                </button>
-              </th>
-              {["Produto", "SKU", "Categoria", "Qtd", "Preço", "Custo", "Margem", "Ações"].map((h) => (
-                <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>
-                  {h.toUpperCase()}
+        {isLoading ? (
+          <div style={{ padding: "40px", textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
+            Carregando produtos...
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "var(--surface-1)", borderBottom: "1px solid var(--border)" }}>
+                <th style={{ padding: "11px 12px 11px 16px", width: 40 }}>
+                  <button
+                    onClick={toggleSelectAll}
+                    title={allFilteredSelected ? "Desmarcar todos" : "Selecionar todos"}
+                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: allFilteredSelected || someFilteredSelected ? "var(--gold)" : "var(--muted-foreground)" }}
+                  >
+                    {allFilteredSelected
+                      ? <CheckSquare size={16} />
+                      : someFilteredSelected
+                      ? <MinusSquare size={16} />
+                      : <Square size={16} />}
+                  </button>
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((p, i) => {
-              const margin = ((p.price - p.cost) / p.price) * 100;
-              const isLow = p.quantity <= p.minQuantity;
-              const isSelected = selected.has(p.id);
-              return (
-                <tr key={p.id}
-                  style={{
-                    borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
-                    background: isSelected ? "oklch(0.72 0.130 73 / 0.06)" : "transparent",
-                  }}
-                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--surface-1)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isSelected ? "oklch(0.72 0.130 73 / 0.06)" : "transparent"; }}
-                >
-                  <td style={{ padding: "13px 12px 13px 16px", width: 40 }}>
-                    <button
-                      onClick={() => toggleSelect(p.id)}
-                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: isSelected ? "var(--gold)" : "var(--muted-foreground)" }}
-                    >
-                      {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
-                    </button>
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <p style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</p>
-                    {(p.color || p.model) && (
-                      <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 2 }}>
-                        {[p.color, p.model].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                  </td>
-                  <td style={{ padding: "13px 16px", fontSize: 12, fontFamily: "JetBrains Mono", color: "var(--muted-foreground)" }}>{p.sku}</td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4, background: "var(--surface-2)", color: "var(--muted-foreground)" }}>
-                      {p.category}
-                    </span>
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span className="font-mono-num" style={{
-                        fontSize: 15, fontWeight: 700,
-                        color: p.quantity === 0 ? "oklch(0.65 0.22 25)" : isLow ? "oklch(0.78 0.18 55)" : "var(--foreground)",
-                      }}>
-                        {p.quantity}
+                {["Produto", "SKU", "Categoria", "Qtd", "Preço", "Custo", "Margem", "Ações"].map((h) => (
+                  <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>
+                    {h.toUpperCase()}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p, i) => {
+                const margin = ((p.price - p.cost) / p.price) * 100;
+                const isLow = p.quantity <= p.minQuantity;
+                const isSelected = selected.has(p.id);
+                return (
+                  <tr key={p.id}
+                    style={{
+                      borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
+                      background: isSelected ? "oklch(0.72 0.130 73 / 0.06)" : "transparent",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--surface-1)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isSelected ? "oklch(0.72 0.130 73 / 0.06)" : "transparent"; }}
+                  >
+                    <td style={{ padding: "13px 12px 13px 16px", width: 40 }}>
+                      <button
+                        onClick={() => toggleSelect(p.id)}
+                        style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, color: isSelected ? "var(--gold)" : "var(--muted-foreground)" }}
+                      >
+                        {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+                      </button>
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <p style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</p>
+                      {(p.color || p.model) && (
+                        <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 2 }}>
+                          {[p.color, p.model].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </td>
+                    <td style={{ padding: "13px 16px", fontSize: 12, fontFamily: "JetBrains Mono", color: "var(--muted-foreground)" }}>{p.sku}</td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4, background: "var(--surface-2)", color: "var(--muted-foreground)" }}>
+                        {p.category}
                       </span>
-                      {isLow && <AlertTriangle size={12} style={{ color: p.quantity === 0 ? "oklch(0.65 0.22 25)" : "oklch(0.78 0.18 55)" }} />}
-                    </div>
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(p.price)}</span>
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <span className="font-mono-num" style={{ fontSize: 13, color: "var(--muted-foreground)" }}>{fmt(p.cost)}</span>
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <span className="font-mono-num" style={{ fontSize: 12, fontWeight: 600, color: margin > 35 ? "oklch(0.62 0.16 145)" : margin > 20 ? "var(--gold)" : "oklch(0.65 0.22 25)" }}>
-                      {margin.toFixed(0)}%
-                    </span>
-                  </td>
-                  <td style={{ padding: "13px 16px" }}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button
-                        onClick={() => setStockModal({ product: p, qty: "", reason: "" })}
-                        title="Entrada de estoque"
-                        style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.62 0.16 145 / 0.15)", border: "1px solid oklch(0.62 0.16 145 / 0.3)", cursor: "pointer", color: "oklch(0.62 0.16 145)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      >
-                        <ArrowDown size={13} />
-                      </button>
-                      <button
-                        onClick={() => openEdit(p)}
-                        style={{ width: 28, height: 28, borderRadius: 6, background: "var(--surface-2)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      >
-                        <Edit2 size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.60 0.20 25 / 0.12)", border: "1px solid oklch(0.60 0.20 25 / 0.25)", cursor: "pointer", color: "oklch(0.65 0.22 25)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filtered.length === 0 && (
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span className="font-mono-num" style={{
+                          fontSize: 15, fontWeight: 700,
+                          color: p.quantity === 0 ? "oklch(0.65 0.22 25)" : isLow ? "oklch(0.78 0.18 55)" : "var(--foreground)",
+                        }}>
+                          {p.quantity}
+                        </span>
+                        {isLow && <AlertTriangle size={12} style={{ color: p.quantity === 0 ? "oklch(0.65 0.22 25)" : "oklch(0.78 0.18 55)" }} />}
+                      </div>
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(p.price)}</span>
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <span className="font-mono-num" style={{ fontSize: 13, color: "var(--muted-foreground)" }}>{fmt(p.cost)}</span>
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <span className="font-mono-num" style={{ fontSize: 12, fontWeight: 600, color: margin > 35 ? "oklch(0.62 0.16 145)" : margin > 20 ? "var(--gold)" : "oklch(0.65 0.22 25)" }}>
+                        {margin.toFixed(0)}%
+                      </span>
+                    </td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => setStockModal({ product: p, qty: "", reason: "" })}
+                          title="Entrada de estoque"
+                          style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.62 0.16 145 / 0.15)", border: "1px solid oklch(0.62 0.16 145 / 0.3)", cursor: "pointer", color: "oklch(0.62 0.16 145)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <ArrowDown size={13} />
+                        </button>
+                        <button
+                          onClick={() => openEdit(p)}
+                          style={{ width: 28, height: 28, borderRadius: 6, background: "var(--surface-2)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--muted-foreground)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          style={{ width: 28, height: 28, borderRadius: 6, background: "oklch(0.60 0.20 25 / 0.12)", border: "1px solid oklch(0.60 0.20 25 / 0.25)", cursor: "pointer", color: "oklch(0.65 0.22 25)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {!isLoading && filtered.length === 0 && (
           <div style={{ padding: "40px", textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
             Nenhum produto encontrado
           </div>
@@ -424,7 +474,10 @@ function Estoque() {
               <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: "11px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer", color: "var(--foreground)", fontSize: 13, fontFamily: "Syne", fontWeight: 600 }}>
                 Cancelar
               </button>
-              <button onClick={handleSave} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, oklch(0.78 0.130 78), oklch(0.65 0.130 68))", border: "none", borderRadius: 8, cursor: "pointer", color: "oklch(0.07 0.010 74)", fontSize: 13, fontFamily: "Syne", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <button
+                onClick={handleSave}
+                disabled={addMutation.isPending || updateMutation.isPending}
+                style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, oklch(0.78 0.130 78), oklch(0.65 0.130 68))", border: "none", borderRadius: 8, cursor: "pointer", color: "oklch(0.07 0.010 74)", fontSize: 13, fontFamily: "Syne", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Check size={14} /> {editingId ? "Salvar alterações" : "Cadastrar produto"}
               </button>
             </div>
@@ -453,7 +506,10 @@ function Estoque() {
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button onClick={() => setStockModal(null)} style={{ flex: 1, padding: "11px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer", color: "var(--foreground)", fontSize: 13, fontFamily: "Syne", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={handleStockEntry} style={{ flex: 2, padding: "11px", background: "oklch(0.62 0.16 145)", border: "none", borderRadius: 8, cursor: "pointer", color: "oklch(0.07 0.010 74)", fontSize: 13, fontFamily: "Syne", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <button
+                onClick={handleStockEntry}
+                disabled={stockMutation.isPending}
+                style={{ flex: 2, padding: "11px", background: "oklch(0.62 0.16 145)", border: "none", borderRadius: 8, cursor: "pointer", color: "oklch(0.07 0.010 74)", fontSize: 13, fontFamily: "Syne", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <ArrowDown size={14} /> Confirmar entrada
               </button>
             </div>

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart,
   Bar,
@@ -21,11 +22,11 @@ import {
   getSalesToday,
   getSalesThisMonth,
   getLast7DaysRevenue,
-  getSellerRanking,
   getLowStockProducts,
   getSales,
-} from "../lib/store";
-import type { Sale } from "../lib/types";
+  getUsers,
+} from "../lib/db";
+import type { AppUser } from "../lib/types";
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -115,14 +116,29 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 function Dashboard() {
-  const [salesToday] = useState(() => getSalesToday());
-  const [salesMonth] = useState(() => getSalesThisMonth());
-  const [chartData] = useState(() => getLast7DaysRevenue());
-  const [ranking] = useState(() => getSellerRanking());
-  const [lowStock] = useState(() => getLowStockProducts());
-  const [recentSales] = useState<Sale[]>(() =>
-    getSales().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8)
+  const { data: salesToday = [] } = useQuery({ queryKey: ["salesToday"], queryFn: getSalesToday });
+  const { data: salesMonth = [] } = useQuery({ queryKey: ["salesMonth"], queryFn: getSalesThisMonth });
+  const { data: chartData = [] } = useQuery({ queryKey: ["chart7days"], queryFn: getLast7DaysRevenue });
+  const { data: lowStock = [] } = useQuery({ queryKey: ["lowStock"], queryFn: getLowStockProducts });
+  const { data: recentSalesRaw = [] } = useQuery({ queryKey: ["recentSales"], queryFn: () => getSales(8) });
+  const { data: users = [] } = useQuery<AppUser[]>({ queryKey: ["users"], queryFn: getUsers });
+
+  const recentSales = useMemo(() =>
+    [...recentSalesRaw].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8),
+    [recentSalesRaw]
   );
+
+  const ranking = useMemo(() => {
+    const sellers = users.filter((u) => u.role === "seller" && u.active);
+    return sellers.map((user) => {
+      const mine = salesMonth.filter((s) => s.sellerId === user.id);
+      return {
+        user,
+        total: mine.reduce((s, v) => s + v.total, 0),
+        count: mine.length,
+      };
+    }).sort((a, b) => b.total - a.total);
+  }, [users, salesMonth]);
 
   const todayRevenue = salesToday.reduce((s, v) => s + v.total, 0);
   const monthRevenue = salesMonth.reduce((s, v) => s + v.total, 0);
@@ -185,12 +201,15 @@ function Dashboard() {
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>RANKING DO MÊS</p>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {ranking.map(({ seller, total, count }, i) => (
-              <div key={seller.id}>
+            {ranking.length === 0 && (
+              <p style={{ fontSize: 13, color: "var(--muted-foreground)", textAlign: "center", paddingTop: 20 }}>Sem dados ainda</p>
+            )}
+            {ranking.map(({ user, total, count }, i) => (
+              <div key={user.id}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, color: i === 0 ? "var(--gold)" : "var(--muted-foreground)", width: 18, fontFamily: "JetBrains Mono" }}>#{i + 1}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{seller.name.split(" ")[0]}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>{user.name.split(" ")[0]}</span>
                     <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{count}v</span>
                   </div>
                   <span className="font-mono-num" style={{ fontSize: 13, color: i === 0 ? "var(--gold)" : "var(--foreground)", fontWeight: 600 }}>{fmt(total)}</span>
@@ -211,43 +230,47 @@ function Dashboard() {
             <Clock size={14} style={{ color: "var(--gold)" }} />
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>ÚLTIMAS VENDAS</p>
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "var(--surface-1)" }}>
-                {["Produto", "Vendedor", "Pagamento", "Total", "Hora"].map((h) => (
-                  <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>
-                    {h.toUpperCase()}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recentSales.map((sale, i) => (
-                <tr key={sale.id}
-                  style={{ borderBottom: i < recentSales.length - 1 ? "1px solid var(--border)" : "none" }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
-                >
-                  <td style={{ padding: "11px 16px", fontSize: 13 }}>
-                    {sale.items[0].productName.split(" ").slice(0, 3).join(" ")}
-                    {sale.items.length > 1 && <span style={{ color: "var(--muted-foreground)", fontSize: 11 }}> +{sale.items.length - 1}</span>}
-                  </td>
-                  <td style={{ padding: "11px 16px", fontSize: 13, color: "var(--muted-foreground)" }}>{sale.sellerName.split(" ")[0]}</td>
-                  <td style={{ padding: "11px 16px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "var(--surface-2)", color: "var(--muted-foreground)" }}>
-                      {PAYMENT_LABELS[sale.paymentMethod]}
-                    </span>
-                  </td>
-                  <td style={{ padding: "11px 16px" }}>
-                    <span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(sale.total)}</span>
-                  </td>
-                  <td style={{ padding: "11px 16px", fontSize: 12, color: "var(--muted-foreground)", fontFamily: "JetBrains Mono" }}>
-                    {new Date(sale.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                  </td>
+          {recentSales.length === 0 ? (
+            <p style={{ padding: "32px", textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>Nenhuma venda registrada</p>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "var(--surface-1)" }}>
+                  {["Produto", "Vendedor", "Pagamento", "Total", "Hora"].map((h) => (
+                    <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>
+                      {h.toUpperCase()}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {recentSales.map((sale, i) => (
+                  <tr key={sale.id}
+                    style={{ borderBottom: i < recentSales.length - 1 ? "1px solid var(--border)" : "none" }}
+                    onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
+                    onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+                  >
+                    <td style={{ padding: "11px 16px", fontSize: 13 }}>
+                      {sale.items[0]?.productName.split(" ").slice(0, 3).join(" ")}
+                      {sale.items.length > 1 && <span style={{ color: "var(--muted-foreground)", fontSize: 11 }}> +{sale.items.length - 1}</span>}
+                    </td>
+                    <td style={{ padding: "11px 16px", fontSize: 13, color: "var(--muted-foreground)" }}>{sale.sellerName.split(" ")[0]}</td>
+                    <td style={{ padding: "11px 16px" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "var(--surface-2)", color: "var(--muted-foreground)" }}>
+                        {PAYMENT_LABELS[sale.paymentMethod]}
+                      </span>
+                    </td>
+                    <td style={{ padding: "11px 16px" }}>
+                      <span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(sale.total)}</span>
+                    </td>
+                    <td style={{ padding: "11px 16px", fontSize: 12, color: "var(--muted-foreground)", fontFamily: "JetBrains Mono" }}>
+                      {new Date(sale.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div style={{ background: "var(--card)", border: lowStock.length > 0 ? "1px solid oklch(0.60 0.20 25 / 0.35)" : "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>

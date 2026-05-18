@@ -9,12 +9,24 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as VendedoresRouteImport } from './routes/vendedores'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as PdvRouteImport } from './routes/pdv'
 import { Route as EstoqueRouteImport } from './routes/estoque'
 import { Route as IndexRouteImport } from './routes/index'
 
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VendedoresRoute = VendedoresRouteImport.update({
   id: '/vendedores',
   path: '/vendedores',
@@ -47,6 +59,8 @@ export interface FileRoutesByFullPath {
   '/pdv': typeof PdvRoute
   '/relatorios': typeof RelatoriosRoute
   '/vendedores': typeof VendedoresRoute
+  '/login': typeof LoginRoute
+  '/admin': typeof AdminRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +68,8 @@ export interface FileRoutesByTo {
   '/pdv': typeof PdvRoute
   '/relatorios': typeof RelatoriosRoute
   '/vendedores': typeof VendedoresRoute
+  '/login': typeof LoginRoute
+  '/admin': typeof AdminRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +78,15 @@ export interface FileRoutesById {
   '/pdv': typeof PdvRoute
   '/relatorios': typeof RelatoriosRoute
   '/vendedores': typeof VendedoresRoute
+  '/login': typeof LoginRoute
+  '/admin': typeof AdminRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores'
+  fullPaths: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores' | '/login' | '/admin'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores'
-  id: '__root__' | '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores'
+  to: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores' | '/login' | '/admin'
+  id: '__root__' | '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores' | '/login' | '/admin'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +95,8 @@ export interface RootRouteChildren {
   PdvRoute: typeof PdvRoute
   RelatoriosRoute: typeof RelatoriosRoute
   VendedoresRoute: typeof VendedoresRoute
+  LoginRoute: typeof LoginRoute
+  AdminRoute: typeof AdminRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +136,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +159,8 @@ const rootRouteChildren: RootRouteChildren = {
   PdvRoute: PdvRoute,
   RelatoriosRoute: RelatoriosRoute,
   VendedoresRoute: VendedoresRoute,
+  LoginRoute: LoginRoute,
+  AdminRoute: AdminRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

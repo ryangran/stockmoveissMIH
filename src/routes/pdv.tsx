@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, Plus, Minus, Trash2, ShoppingCart, Check, X, Tag } from "lucide-react";
-import { getProducts, getSellers, addSale } from "../lib/store";
+import { getProducts, getUsers, addSale } from "../lib/db";
 import type { CartItem, PaymentMethod } from "../lib/types";
 
 export const Route = createFileRoute("/pdv")({
@@ -22,16 +23,27 @@ function fmt(v: number) {
 }
 
 function PDV() {
-  const [allProducts] = useState(() => getProducts());
-  const [sellers] = useState(() => getSellers().filter((s) => s.active));
+  const queryClient = useQueryClient();
+  const { data: allProducts = [] } = useQuery({ queryKey: ["products"], queryFn: getProducts });
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: getUsers });
+
+  const sellers = useMemo(() => users.filter((u) => u.role === "seller" && u.active), [users]);
+
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Todos");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("pix");
-  const [sellerId, setSellerId] = useState(sellers[0]?.id ?? "");
+  const [sellerId, setSellerId] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (sellers.length > 0 && !sellerId) {
+      setSellerId(sellers[0].id);
+    }
+  }, [sellers, sellerId]);
 
   const categories = useMemo(() => ["Todos", ...Array.from(new Set(allProducts.map((p) => p.category)))], [allProducts]);
 
@@ -79,38 +91,51 @@ function PDV() {
     setCart((prev) => prev.filter((i) => i.product.id !== productId));
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (cart.length === 0) { toast.error("Adicione produtos ao carrinho"); return; }
     if (!sellerId) { toast.error("Selecione um vendedor"); return; }
     const seller = sellers.find((s) => s.id === sellerId);
-    if (!seller) return;
+    if (!seller) { toast.error("Vendedor não encontrado"); return; }
 
-    addSale({
-      items: cart.map((i) => ({
-        productId: i.product.id,
-        productName: i.product.name,
-        sku: i.product.sku,
-        quantity: i.quantity,
-        unitPrice: i.product.price,
-        subtotal: i.product.price * i.quantity,
-      })),
-      sellerId: seller.id,
-      sellerName: seller.name,
-      paymentMethod: payment,
-      subtotal,
-      discount: discountValue,
-      total,
-    });
+    setSaving(true);
+    try {
+      await addSale({
+        items: cart.map((i) => ({
+          productId: i.product.id,
+          productName: i.product.name,
+          sku: i.product.sku,
+          quantity: i.quantity,
+          unitPrice: i.product.price,
+          subtotal: i.product.price * i.quantity,
+        })),
+        sellerId: seller.id,
+        sellerName: seller.name,
+        paymentMethod: payment,
+        subtotal,
+        discount: discountValue,
+        total,
+      });
 
-    setConfirmed(true);
-    toast.success(`Venda de ${fmt(total)} registrada!`);
-    setTimeout(() => {
-      setCart([]);
-      setDiscount("");
-      setPayment("pix");
-      setShowConfirm(false);
-      setConfirmed(false);
-    }, 1800);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["salesToday"] });
+      queryClient.invalidateQueries({ queryKey: ["salesMonth"] });
+      queryClient.invalidateQueries({ queryKey: ["recentSales"] });
+      queryClient.invalidateQueries({ queryKey: ["lowStock"] });
+
+      setConfirmed(true);
+      toast.success(`Venda de ${fmt(total)} registrada!`);
+      setTimeout(() => {
+        setCart([]);
+        setDiscount("");
+        setPayment("pix");
+        setShowConfirm(false);
+        setConfirmed(false);
+      }, 1800);
+    } catch (err) {
+      toast.error("Erro ao registrar venda");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -139,6 +164,7 @@ function PDV() {
                   outline: "none",
                 }}
               >
+                {sellers.length === 0 && <option value="">Nenhum vendedor cadastrado</option>}
                 {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -483,15 +509,17 @@ function PDV() {
                 <div style={{ display: "flex", gap: 10 }}>
                   <button
                     onClick={() => setShowConfirm(false)}
+                    disabled={saving}
                     style={{ flex: 1, padding: "12px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer", color: "var(--foreground)", fontSize: 14, fontFamily: "Syne", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
                   >
                     <X size={15} /> Cancelar
                   </button>
                   <button
                     onClick={handleConfirm}
-                    style={{ flex: 2, padding: "12px", background: "linear-gradient(135deg, oklch(0.78 0.130 78), oklch(0.65 0.130 68))", border: "none", borderRadius: 8, cursor: "pointer", color: "oklch(0.07 0.010 74)", fontSize: 14, fontFamily: "Syne", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: "0 4px 16px oklch(0.72 0.130 73 / 0.4)" }}
+                    disabled={saving}
+                    style={{ flex: 2, padding: "12px", background: saving ? "oklch(0.55 0.09 73)" : "linear-gradient(135deg, oklch(0.78 0.130 78), oklch(0.65 0.130 68))", border: "none", borderRadius: 8, cursor: saving ? "not-allowed" : "pointer", color: "oklch(0.07 0.010 74)", fontSize: 14, fontFamily: "Syne", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, boxShadow: saving ? "none" : "0 4px 16px oklch(0.72 0.130 73 / 0.4)" }}
                   >
-                    <Check size={15} /> Confirmar
+                    <Check size={15} /> {saving ? "Salvando..." : "Confirmar"}
                   </button>
                 </div>
               </>

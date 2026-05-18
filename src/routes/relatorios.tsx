@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import { TrendingUp, Package, Users, Download, Calendar } from "lucide-react";
-import { getSales, getProducts, getSellers } from "../lib/store";
+import { getSales, getProducts, getUsers } from "../lib/db";
 
 export const Route = createFileRoute("/relatorios")({
   component: Relatorios,
@@ -40,16 +41,18 @@ function Relatorios() {
   const [tab, setTab] = useState<Tab>("revenue");
   const [period, setPeriod] = useState<"7" | "30" | "90">("30");
 
-  const allSales = useMemo(() => getSales(), []);
-  const allProducts = useMemo(() => getProducts(), []);
-  const allSellers = useMemo(() => getSellers(), []);
+  const { data: allSalesRaw = [] } = useQuery({ queryKey: ["allSales"], queryFn: () => getSales() });
+  const { data: allProducts = [] } = useQuery({ queryKey: ["products"], queryFn: getProducts });
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: getUsers });
+
+  const allSellers = useMemo(() => users.filter((u) => u.role === "seller" && u.active), [users]);
 
   const filteredSales = useMemo(() => {
     const days = parseInt(period);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
-    return allSales.filter((s) => new Date(s.createdAt) >= cutoff);
-  }, [allSales, period]);
+    return allSalesRaw.filter((s) => new Date(s.createdAt) >= cutoff);
+  }, [allSalesRaw, period]);
 
   // Revenue by day
   const revenueByDay = useMemo(() => {
@@ -95,16 +98,13 @@ function Relatorios() {
 
   // Seller performance
   const sellerPerf = useMemo(() => {
-    return allSellers
-      .filter((s) => s.active)
-      .map((seller) => {
-        const sellerSales = filteredSales.filter((s) => s.sellerId === seller.id);
-        const total = sellerSales.reduce((s, v) => s + v.total, 0);
-        const profit = total * 0.35;
-        const count = sellerSales.length;
-        return { name: seller.name.split(" ")[0], fullName: seller.name, total, profit, count, avgTicket: count > 0 ? total / count : 0 };
-      })
-      .sort((a, b) => b.total - a.total);
+    return allSellers.map((seller) => {
+      const sellerSales = filteredSales.filter((s) => s.sellerId === seller.id);
+      const total = sellerSales.reduce((s, v) => s + v.total, 0);
+      const profit = total * 0.35;
+      const count = sellerSales.length;
+      return { name: seller.name.split(" ")[0], fullName: seller.name, total, profit, count, avgTicket: count > 0 ? total / count : 0 };
+    }).sort((a, b) => b.total - a.total);
   }, [filteredSales, allSellers]);
 
   const totalRevenue = filteredSales.reduce((s, v) => s + v.total, 0);
@@ -203,7 +203,6 @@ function Relatorios() {
       {/* Tab content */}
       {tab === "revenue" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Revenue line chart */}
           <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)", marginBottom: 20 }}>FATURAMENTO DIÁRIO</p>
             <ResponsiveContainer width="100%" height={220}>
@@ -217,7 +216,6 @@ function Relatorios() {
             </ResponsiveContainer>
           </div>
 
-          {/* Payment method breakdown */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)", marginBottom: 20 }}>POR FORMA DE PAGAMENTO</p>
@@ -236,6 +234,9 @@ function Relatorios() {
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)", marginBottom: 16 }}>DETALHAMENTO</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {revenueByPayment.length === 0 && (
+                  <p style={{ fontSize: 13, color: "var(--muted-foreground)", textAlign: "center", paddingTop: 20 }}>Sem vendas no período</p>
+                )}
                 {revenueByPayment.map(({ name, total }, i) => (
                   <div key={name}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -261,44 +262,50 @@ function Relatorios() {
           <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border)" }}>
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>PRODUTOS MAIS VENDIDOS</p>
           </div>
-          <div style={{ padding: "20px 24px", marginBottom: 8 }}>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={topProducts} layout="vertical" barSize={18}>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.18 0.018 74)" horizontal={false} />
-                <XAxis type="number" tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} tick={{ fill: "oklch(0.58 0.020 74)", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: "oklch(0.78 0.015 74)", fontSize: 11, fontFamily: "Syne" }} axisLine={false} tickLine={false} width={140} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: "oklch(0.72 0.130 73 / 0.05)" }} />
-                <Bar dataKey="total" fill="oklch(0.72 0.130 73)" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "var(--surface-1)", borderTop: "1px solid var(--border)" }}>
-                {["Produto", "Qtd vendida", "Receita", "% do total"].map((h) => (
-                  <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>{h.toUpperCase()}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {topProducts.map((p, i) => (
-                <tr key={i}
-                  style={{ borderBottom: i < topProducts.length - 1 ? "1px solid var(--border)" : "none" }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
-                >
-                  <td style={{ padding: "12px 20px", fontSize: 13, fontWeight: 500 }}>{p.name}</td>
-                  <td style={{ padding: "12px 20px" }}><span className="font-mono-num" style={{ fontSize: 13 }}>{p.qty}</span></td>
-                  <td style={{ padding: "12px 20px" }}><span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(p.total)}</span></td>
-                  <td style={{ padding: "12px 20px" }}>
-                    <span className="font-mono-num" style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-                      {totalRevenue > 0 ? ((p.total / totalRevenue) * 100).toFixed(1) : 0}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {topProducts.length === 0 ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>Sem vendas no período selecionado</div>
+          ) : (
+            <>
+              <div style={{ padding: "20px 24px", marginBottom: 8 }}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={topProducts} layout="vertical" barSize={18}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.18 0.018 74)" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} tick={{ fill: "oklch(0.58 0.020 74)", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fill: "oklch(0.78 0.015 74)", fontSize: 11, fontFamily: "Syne" }} axisLine={false} tickLine={false} width={140} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "oklch(0.72 0.130 73 / 0.05)" }} />
+                    <Bar dataKey="total" fill="oklch(0.72 0.130 73)" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--surface-1)", borderTop: "1px solid var(--border)" }}>
+                    {["Produto", "Qtd vendida", "Receita", "% do total"].map((h) => (
+                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>{h.toUpperCase()}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {topProducts.map((p, i) => (
+                    <tr key={i}
+                      style={{ borderBottom: i < topProducts.length - 1 ? "1px solid var(--border)" : "none" }}
+                      onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
+                      onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+                    >
+                      <td style={{ padding: "12px 20px", fontSize: 13, fontWeight: 500 }}>{p.name}</td>
+                      <td style={{ padding: "12px 20px" }}><span className="font-mono-num" style={{ fontSize: 13 }}>{p.qty}</span></td>
+                      <td style={{ padding: "12px 20px" }}><span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(p.total)}</span></td>
+                      <td style={{ padding: "12px 20px" }}>
+                        <span className="font-mono-num" style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+                          {totalRevenue > 0 ? ((p.total / totalRevenue) * 100).toFixed(1) : 0}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       )}
 
@@ -306,48 +313,56 @@ function Relatorios() {
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)", marginBottom: 20 }}>FATURAMENTO POR VENDEDOR</p>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={sellerPerf} barSize={40}>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.18 0.018 74)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: "oklch(0.78 0.015 74)", fontSize: 12, fontFamily: "Syne" }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} tick={{ fill: "oklch(0.58 0.020 74)", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} width={48} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: "oklch(0.72 0.130 73 / 0.05)" }} />
-                <Bar dataKey="total" fill="oklch(0.72 0.130 73)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {sellerPerf.length === 0 ? (
+              <p style={{ textAlign: "center", color: "var(--muted-foreground)", fontSize: 13, padding: "20px" }}>Sem dados no período</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={sellerPerf} barSize={40}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.18 0.018 74)" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: "oklch(0.78 0.015 74)", fontSize: 12, fontFamily: "Syne" }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} tick={{ fill: "oklch(0.58 0.020 74)", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} width={48} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "oklch(0.72 0.130 73 / 0.05)" }} />
+                  <Bar dataKey="total" fill="oklch(0.72 0.130 73)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ padding: "14px 24px", borderBottom: "1px solid var(--border)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>DESEMPENHO DETALHADO</p>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "var(--surface-1)" }}>
-                  {["#", "Vendedor", "Vendas", "Faturamento", "Lucro", "Ticket Médio"].map((h) => (
-                    <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>{h.toUpperCase()}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sellerPerf.map((s, i) => (
-                  <tr key={s.fullName}
-                    style={{ borderBottom: i < sellerPerf.length - 1 ? "1px solid var(--border)" : "none" }}
-                    onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
-                    onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
-                  >
-                    <td style={{ padding: "13px 20px" }}>
-                      <span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: i === 0 ? "var(--gold)" : "var(--muted-foreground)" }}>#{i + 1}</span>
-                    </td>
-                    <td style={{ padding: "13px 20px", fontSize: 13, fontWeight: 600 }}>{s.fullName}</td>
-                    <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13 }}>{s.count}</span></td>
-                    <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(s.total)}</span></td>
-                    <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13, color: "oklch(0.62 0.16 145)" }}>{fmt(s.profit)}</span></td>
-                    <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13 }}>{fmt(s.avgTicket)}</span></td>
+            {sellerPerf.length === 0 ? (
+              <div style={{ padding: "40px", textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>Nenhum vendedor com vendas no período</div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--surface-1)" }}>
+                    {["#", "Vendedor", "Vendas", "Faturamento", "Lucro", "Ticket Médio"].map((h) => (
+                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted-foreground)" }}>{h.toUpperCase()}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sellerPerf.map((s, i) => (
+                    <tr key={s.fullName}
+                      style={{ borderBottom: i < sellerPerf.length - 1 ? "1px solid var(--border)" : "none" }}
+                      onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--surface-1)")}
+                      onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+                    >
+                      <td style={{ padding: "13px 20px" }}>
+                        <span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: i === 0 ? "var(--gold)" : "var(--muted-foreground)" }}>#{i + 1}</span>
+                      </td>
+                      <td style={{ padding: "13px 20px", fontSize: 13, fontWeight: 600 }}>{s.fullName}</td>
+                      <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13 }}>{s.count}</span></td>
+                      <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmt(s.total)}</span></td>
+                      <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13, color: "oklch(0.62 0.16 145)" }}>{fmt(s.profit)}</span></td>
+                      <td style={{ padding: "13px 20px" }}><span className="font-mono-num" style={{ fontSize: 13 }}>{fmt(s.avgTicket)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

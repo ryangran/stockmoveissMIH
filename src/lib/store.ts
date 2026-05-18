@@ -1,4 +1,6 @@
-import type { Product, Sale, Seller, StockMovement, PaymentMethod } from './types'
+import type { Product, Sale, StockMovement, PaymentMethod } from './types'
+
+interface Seller { id: string; name: string; phone: string; email: string; active: boolean }
 
 const KEYS = {
   products: 'smv_products_v2',

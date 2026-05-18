@@ -1,6 +1,28 @@
 export type PaymentMethod = 'cash' | 'pix' | 'debit' | 'credit' | 'financing'
-
 export type StockMovementType = 'in' | 'out' | 'adjustment'
+export type UserRole = 'admin' | 'seller'
+
+export const ALL_TABS = ['dashboard', 'pdv', 'estoque', 'vendedores', 'relatorios'] as const
+export type TabKey = (typeof ALL_TABS)[number]
+
+export const TAB_LABELS: Record<TabKey, string> = {
+  dashboard: 'Dashboard',
+  pdv: 'PDV / Caixa',
+  estoque: 'Estoque',
+  vendedores: 'Vendedores',
+  relatorios: 'Relatórios',
+}
+
+export interface AppUser {
+  id: string
+  username: string
+  name: string
+  role: UserRole
+  phone?: string
+  email?: string
+  active: boolean
+  allowedTabs: TabKey[]
+}
 
 export interface Product {
   id: string
@@ -40,14 +62,6 @@ export interface Sale {
   discount: number
   total: number
   createdAt: string
-}
-
-export interface Seller {
-  id: string
-  name: string
-  phone: string
-  email: string
-  active: boolean
 }
 
 export interface StockMovement {
