@@ -52,13 +52,16 @@ function mapUser(r: any): AppUser {
 
 export async function authenticateUser(username: string, password: string): Promise<AppUser | null> {
   const hash = await hashPassword(password)
-  const { data } = await supabase
+  console.log('[auth] hash:', hash)
+  const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('username', username)
     .eq('password_hash', hash)
     .eq('active', true)
     .single()
+  console.log('[auth] data:', data, 'error:', error)
+  if (error && error.code !== 'PGRST116') throw new Error(`Supabase: ${error.message} (${error.code})`)
   return data ? mapUser(data) : null
 }
 
