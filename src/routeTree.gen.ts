@@ -9,24 +9,14 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as VendedoresRouteImport } from './routes/vendedores'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as PdvRouteImport } from './routes/pdv'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as EstoqueRouteImport } from './routes/estoque'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const VendedoresRoute = VendedoresRouteImport.update({
   id: '/vendedores',
   path: '/vendedores',
@@ -42,9 +32,19 @@ const PdvRoute = PdvRouteImport.update({
   path: '/pdv',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EstoqueRoute = EstoqueRouteImport.update({
   id: '/estoque',
   path: '/estoque',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -55,48 +55,70 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/estoque': typeof EstoqueRoute
+  '/login': typeof LoginRoute
   '/pdv': typeof PdvRoute
   '/relatorios': typeof RelatoriosRoute
   '/vendedores': typeof VendedoresRoute
-  '/login': typeof LoginRoute
-  '/admin': typeof AdminRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/estoque': typeof EstoqueRoute
+  '/login': typeof LoginRoute
   '/pdv': typeof PdvRoute
   '/relatorios': typeof RelatoriosRoute
   '/vendedores': typeof VendedoresRoute
-  '/login': typeof LoginRoute
-  '/admin': typeof AdminRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/estoque': typeof EstoqueRoute
+  '/login': typeof LoginRoute
   '/pdv': typeof PdvRoute
   '/relatorios': typeof RelatoriosRoute
   '/vendedores': typeof VendedoresRoute
-  '/login': typeof LoginRoute
-  '/admin': typeof AdminRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores' | '/login' | '/admin'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/estoque'
+    | '/login'
+    | '/pdv'
+    | '/relatorios'
+    | '/vendedores'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores' | '/login' | '/admin'
-  id: '__root__' | '/' | '/estoque' | '/pdv' | '/relatorios' | '/vendedores' | '/login' | '/admin'
+  to:
+    | '/'
+    | '/admin'
+    | '/estoque'
+    | '/login'
+    | '/pdv'
+    | '/relatorios'
+    | '/vendedores'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/estoque'
+    | '/login'
+    | '/pdv'
+    | '/relatorios'
+    | '/vendedores'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   EstoqueRoute: typeof EstoqueRoute
+  LoginRoute: typeof LoginRoute
   PdvRoute: typeof PdvRoute
   RelatoriosRoute: typeof RelatoriosRoute
   VendedoresRoute: typeof VendedoresRoute
-  LoginRoute: typeof LoginRoute
-  AdminRoute: typeof AdminRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -122,25 +144,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PdvRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/estoque': {
-      id: '/estoque'
-      path: '/estoque'
-      fullPath: '/estoque'
-      preLoaderRoute: typeof EstoqueRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/estoque': {
+      id: '/estoque'
+      path: '/estoque'
+      fullPath: '/estoque'
+      preLoaderRoute: typeof EstoqueRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -150,18 +165,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   EstoqueRoute: EstoqueRoute,
+  LoginRoute: LoginRoute,
   PdvRoute: PdvRoute,
   RelatoriosRoute: RelatoriosRoute,
   VendedoresRoute: VendedoresRoute,
-  LoginRoute: LoginRoute,
-  AdminRoute: AdminRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
