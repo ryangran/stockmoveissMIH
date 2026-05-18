@@ -195,7 +195,7 @@ export async function getLast7DaysRevenue(): Promise<{ date: string; total: numb
 export async function getLowStockProducts(): Promise<Product[]> {
   const { data, error } = await supabase.from('products').select('*')
   if (error) throw error
-  return (data ?? []).map(mapProduct).filter(p => p.quantity <= p.minQuantity)
+  return (data ?? []).map(mapProduct).filter((p: Product) => p.quantity <= p.minQuantity)
 }
 
 export async function getSellerRanking(users: AppUser[]): Promise<{ user: AppUser; total: number; count: number }[]> {
