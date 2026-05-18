@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart,
@@ -27,6 +27,7 @@ import {
   getUsers,
 } from "../lib/db";
 import { useAuth } from "../lib/auth";
+import { useRealtimeSales } from "../lib/realtime";
 import type { AppUser } from "../lib/types";
 
 export const Route = createFileRoute("/")({
@@ -116,17 +117,54 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
+function SaleNotification({ sale, onDismiss }: { sale: { seller_name: string; total: number } | null; onDismiss: () => void }) {
+  if (!sale) return null;
+  const fmt2 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 });
+  return (
+    <div style={{
+      position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)",
+      zIndex: 100, display: "flex", alignItems: "center", gap: 12,
+      background: "oklch(0.12 0.014 74)",
+      border: "1px solid oklch(0.72 0.130 73 / 0.6)",
+      borderRadius: 12, padding: "12px 20px",
+      boxShadow: "0 8px 32px oklch(0.72 0.130 73 / 0.3)",
+      animation: "slideDown 0.3s ease",
+    }}>
+      <span style={{ fontSize: 20 }}>🛒</span>
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "oklch(0.93 0.015 74)" }}>
+          {sale.seller_name.split(" ")[0]} fechou uma venda!
+        </p>
+        <p style={{ fontSize: 12, color: "oklch(0.72 0.130 73)", fontWeight: 600 }}>{fmt2(sale.total)}</p>
+      </div>
+      <button onClick={onDismiss} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "oklch(0.55 0.020 74)", fontSize: 16, lineHeight: 1 }}>×</button>
+      <style>{`@keyframes slideDown { from { opacity:0; transform:translateX(-50%) translateY(-12px) } to { opacity:1; transform:translateX(-50%) translateY(0) } }`}</style>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { user: me } = useAuth();
   const isSeller = me?.role === "seller";
   const sellerId = isSeller ? me!.id : undefined;
+
+  const [notification, setNotification] = useState<{ seller_name: string; total: number } | null>(null);
+
+  const handleNewSale = useCallback((sale: { seller_name: string; total: number }) => {
+    setNotification(sale);
+    setTimeout(() => setNotification(null), 5000);
+  }, []);
+
+  useRealtimeSales(handleNewSale);
 
   const { data: salesToday = [] } = useQuery({ queryKey: ["salesToday", sellerId], queryFn: () => getSalesToday(sellerId) });
   const { data: salesMonth = [] } = useQuery({ queryKey: ["salesMonth", sellerId], queryFn: () => getSalesThisMonth(sellerId) });
   const { data: chartData = [] } = useQuery({ queryKey: ["chart7days", sellerId], queryFn: () => getLast7DaysRevenue(sellerId) });
   const { data: lowStock = [] } = useQuery({ queryKey: ["lowStock"], queryFn: getLowStockProducts });
   const { data: recentSalesRaw = [] } = useQuery({ queryKey: ["recentSales", sellerId], queryFn: () => getSales(8) });
-  const { data: users = [] } = useQuery<AppUser[]>({ queryKey: ["users"], queryFn: getUsers, enabled: !isSeller });
+  const { data: users = [] } = useQuery<AppUser[]>({ queryKey: ["users"], queryFn: getUsers });
+  // ranking always uses full month data (unfiltered) so all sellers appear
+  const { data: salesMonthAll = [] } = useQuery({ queryKey: ["salesMonth"], queryFn: () => getSalesThisMonth() });
 
   const recentSales = useMemo(() => {
     const all = [...recentSalesRaw];
@@ -135,13 +173,12 @@ function Dashboard() {
   }, [recentSalesRaw, isSeller, sellerId]);
 
   const ranking = useMemo(() => {
-    if (isSeller) return [];
     const sellers = users.filter((u) => u.role === "seller" && u.active);
     return sellers.map((user) => {
-      const mine = salesMonth.filter((s) => s.sellerId === user.id);
+      const mine = salesMonthAll.filter((s) => s.sellerId === user.id);
       return { user, total: mine.reduce((s, v) => s + v.total, 0), count: mine.length };
     }).sort((a, b) => b.total - a.total);
-  }, [users, salesMonth, isSeller]);
+  }, [users, salesMonthAll]);
 
   const todayRevenue = salesToday.reduce((s, v) => s + v.total, 0);
   const monthRevenue = salesMonth.reduce((s, v) => s + v.total, 0);
@@ -153,6 +190,7 @@ function Dashboard() {
 
   return (
     <div style={{ padding: "32px 36px", minHeight: "100vh" }}>
+      <SaleNotification sale={notification} onDismiss={() => setNotification(null)} />
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
@@ -183,7 +221,7 @@ function Dashboard() {
       </div>
 
       {/* Chart + Ranking */}
-      <div style={{ display: "grid", gridTemplateColumns: isSeller ? "1fr" : "1fr 320px", gap: 20, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, marginBottom: 20 }}>
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>
@@ -202,34 +240,37 @@ function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        {!isSeller && (
-          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-              <Trophy size={14} style={{ color: "var(--gold)" }} />
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>RANKING DO MÊS</p>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {ranking.length === 0 && (
-                <p style={{ fontSize: 13, color: "var(--muted-foreground)", textAlign: "center", paddingTop: 20 }}>Sem dados ainda</p>
-              )}
-              {ranking.map(({ user, total, count }, i) => (
-                <div key={user.id}>
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+            <Trophy size={14} style={{ color: "var(--gold)" }} />
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--muted-foreground)" }}>RANKING DO MÊS</p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {ranking.length === 0 && (
+              <p style={{ fontSize: 13, color: "var(--muted-foreground)", textAlign: "center", paddingTop: 20 }}>Sem dados ainda</p>
+            )}
+            {ranking.map(({ user, total, count }, i) => {
+              const isMe = isSeller && user.id === me?.id;
+              return (
+                <div key={user.id} style={{ padding: isMe ? "6px 8px" : "0", margin: isMe ? "-6px -8px" : "0", borderRadius: isMe ? 8 : 0, background: isMe ? "oklch(0.72 0.130 73 / 0.07)" : "transparent", border: isMe ? "1px solid oklch(0.72 0.130 73 / 0.2)" : "1px solid transparent" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 800, color: i === 0 ? "var(--gold)" : "var(--muted-foreground)", width: 18, fontFamily: "JetBrains Mono" }}>#{i + 1}</span>
-                      <span style={{ fontSize: 14, fontWeight: 600 }}>{user.name.split(" ")[0]}</span>
+                      <span style={{ fontSize: 14, fontWeight: isMe ? 700 : 600, color: isMe ? "var(--gold)" : "var(--foreground)" }}>
+                        {user.name.split(" ")[0]}{isMe && " (você)"}
+                      </span>
                       <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{count}v</span>
                     </div>
-                    <span className="font-mono-num" style={{ fontSize: 13, color: i === 0 ? "var(--gold)" : "var(--foreground)", fontWeight: 600 }}>{fmt(total)}</span>
+                    <span className="font-mono-num" style={{ fontSize: 13, color: i === 0 || isMe ? "var(--gold)" : "var(--foreground)", fontWeight: 600 }}>{fmt(total)}</span>
                   </div>
                   <div style={{ height: 3, background: "var(--surface-2)", borderRadius: 2, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(total / maxRanking) * 100}%`, background: i === 0 ? "var(--gold)" : "var(--surface-3)", borderRadius: 2 }} />
+                    <div style={{ height: "100%", width: `${maxRanking > 0 ? (total / maxRanking) * 100 : 0}%`, background: i === 0 || isMe ? "var(--gold)" : "var(--surface-3)", borderRadius: 2, transition: "width 0.6s ease" }} />
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Recent sales + Low stock */}
