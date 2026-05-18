@@ -30,7 +30,6 @@ function Login() {
       navigate({ to: '/' })
     } catch (err: any) {
       setError(err.message ?? 'Erro ao entrar')
-      console.error('[login error]', err)
     } finally {
       setLoading(false)
     }
