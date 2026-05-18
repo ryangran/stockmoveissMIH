@@ -1,1 +1,3 @@
-export { supabase } from '@/integrations/supabase/client'
+import { supabase as generatedSupabase } from '@/integrations/supabase/client'
+
+export const supabase = generatedSupabase as any
